@@ -192,6 +192,10 @@ extension VocabularyRescorer {
     ///   - cbw: Context-biasing weight (default 3.0 per NeMo paper)
     ///   - marginSeconds: Temporal margin around TDT word for CTC search (default 0.5s)
     ///   - minSimilarity: Minimum string similarity to consider a match (default 0.5)
+    ///   - enableSpotterRescue: Run the spotter-anchored rescue pass, which proposes replacements on
+    ///     CTC acoustic score alone (bypassing the string-similarity gate) to catch terms TDT mangles
+    ///     beyond recognition. Reliable only with an accurate CTC model; set false for weaker CTC
+    ///     heads where acoustic-only detections produce false positives (default true).
     /// - Returns: Rescored transcript with constrained CTC replacements
     public func ctcTokenRescore(
         transcript: String,
@@ -200,7 +204,8 @@ extension VocabularyRescorer {
         frameDuration: Double,
         cbw: Float = ContextBiasingConstants.defaultCbw,
         marginSeconds: Double = ContextBiasingConstants.defaultMarginSeconds,
-        minSimilarity: Float = ContextBiasingConstants.minSimilarityFloor
+        minSimilarity: Float = ContextBiasingConstants.minSimilarityFloor,
+        enableSpotterRescue: Bool = true
     ) -> RescoreOutput {
         // Build word-level timings once at the entrypoint and pass into both
         // dispatch paths. Computing this once instead of twice avoids
@@ -228,7 +233,8 @@ extension VocabularyRescorer {
                 frameDuration: frameDuration,
                 cbw: cbw,
                 marginSeconds: marginSeconds,
-                minSimilarity: minSimilarity
+                minSimilarity: minSimilarity,
+                enableSpotterRescue: enableSpotterRescue
             )
         }
     }
@@ -452,7 +458,8 @@ extension VocabularyRescorer {
         frameDuration: Double,
         cbw: Float = ContextBiasingConstants.defaultCbw,
         marginSeconds: Double = ContextBiasingConstants.defaultMarginSeconds,
-        minSimilarity: Float = ContextBiasingConstants.minSimilarityFloor
+        minSimilarity: Float = ContextBiasingConstants.minSimilarityFloor,
+        enableSpotterRescue: Bool = true
     ) -> RescoreOutput {
         guard !wordTimings.isEmpty, !logProbs.isEmpty else {
             return RescoreOutput(text: transcript, replacements: [], wasModified: false)
@@ -774,7 +781,7 @@ extension VocabularyRescorer {
         // `and` → `Evenity`. The TDT-anchored path above already covers
         // those cases via Levenshtein matching against the larger
         // distractor pool.
-        if vocabulary.terms.count <= ContextBiasingConstants.largeVocabThreshold {
+        if enableSpotterRescue, vocabulary.terms.count <= ContextBiasingConstants.largeVocabThreshold {
             collectSpotterAnchoredCandidates(
                 wordTimings: wordTimings,
                 logProbs: logProbs,
